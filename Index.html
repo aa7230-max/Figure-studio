@@ -1,1 +1,278 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Figure Studio v3 · 사진 → 3D 피규어</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);--bg:#eceef5;--panel:#fffffff2;--fg:#1b1d27;--mut:#666b7d;--line:#d4d8e4;--acc:#5b5bf0}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14151c;--panel:#1d1f2bf2;--fg:#f2f3f8;--mut:#9aa0b4;--line:#35384b;--acc:#8080ff}}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif;-webkit-user-select:none;user-select:none}
+#cv{position:absolute;inset:0;touch-action:none}#cv canvas{display:block}
+#msg{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:12px;right:90px;font-size:12px;color:var(--mut);pointer-events:none}
+#pv{display:none;position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:12px;width:60px;height:60px;object-fit:cover;border-radius:10px;border:2px solid var(--acc);background:#fff}
+#bar{position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));background:var(--panel);border-top:1px solid var(--line)}
+.btn{position:relative;overflow:hidden;flex:1;box-sizing:border-box;text-align:center;border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:10px;padding:11px 4px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.ov{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;font-size:0;cursor:pointer}
+#sheet{display:none;position:absolute;left:0;right:0;bottom:calc(62px + env(safe-area-inset-bottom,0px));max-height:42%;overflow-y:auto;background:var(--panel);border-top:1px solid var(--line);border-radius:16px 16px 0 0;padding:12px 14px;font-size:13px}
+@media(min-width:760px){#sheet{left:auto;right:12px;top:12px;bottom:80px;width:300px;max-height:none;border:1px solid var(--line);border-radius:16px}}
+h1{font-size:15px;margin:0 0 8px}h1 span{float:right;cursor:pointer;padding:0 6px}
+label.sl{display:block;margin-top:9px;color:var(--mut);font-size:12px}label.sl input{width:100%;accent-color:var(--acc)}
+.row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0 4px}.row .btn{padding:8px 0;font-size:12px}.row .on{border-color:var(--acc);color:var(--acc)}
+.ck{display:flex;gap:6px;align-items:center;margin-top:8px;font-size:12px}
+#ld{display:none;position:absolute;inset:0;align-items:center;justify-content:center;background:#0007;color:#fff;font-weight:600}
+</style>
+</head>
+<body>
+<div id="cv"></div><div id="msg">로딩 중…</div><img id="pv" alt=""><div id="ld">처리 중…</div>
+<div id="sheet">
+ <h1>🧸 설정 <span id="x">✕</span></h1>
+ <label class="sl">두께 <input id="depth" type="range" min="0.1" max="1.2" step="0.02" value="0.2"></label>
+ <label class="sl">둥글기 <input id="round" type="range" min="0.05" max="0.6" step="0.01" value="0.6"></label>
+ <label class="sl">디테일 입체감 <input id="detail" type="range" min="0" max="1" step="0.05" value="0"></label>
+ <label class="sl">부위별 입체(원통) <input id="tube" type="range" min="0" max="1" step="0.05" value="0.4"></label>
+ <label class="sl">배경 제거 민감도 <input id="tol" type="range" min="10" max="120" step="2" value="90"></label>
+ <label class="sl">조명 <input id="light" type="range" min="0" max="3" step="0.1" value="1.7"></label>
+ <label class="sl">AI 깊이 강도 <input id="ai" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+ <label class="ck"><input type="checkbox" id="auto" checked> 사진 올리면 AI 깊이 자동 실행</label>
+ <div id="ais" style="font-size:11px;color:var(--mut);margin-top:6px">AI 상태: 사진을 올리면 자동 연결</div>
+ <button class="btn" id="dbt" type="button" style="width:100%;margin-top:10px;flex:none">🧠 AI 깊이 추정 (무료 · 내 기기에서 실행)</button>
+ <div class="row" id="mo"><button class="btn on" data-m="idle">숨쉬기</button><button class="btn" data-m="look">시선</button><button class="btn" data-m="sway">흔들</button><button class="btn" data-m="talk">말하기</button></div>
+ <label class="ck"><input type="checkbox" id="toon" checked> 애니 툰 셰이딩</label>
+ <label class="ck"><input type="checkbox" id="base" checked> 받침대</label>
+ <label class="ck"><input type="checkbox" id="wire"> 와이어프레임</label>
+ <label class="ck"><input type="checkbox" id="spin"> 자동 회전</label>
+ <div id="pb" contenteditable="true" style="margin-top:10px;padding:12px;border:1px dashed var(--acc);border-radius:10px;font-size:12px;color:var(--mut);text-align:center;-webkit-user-select:text;user-select:text;min-height:20px">📎 사진 선택이 안 되면: 사진을 복사한 뒤 여기를 길게 눌러 붙여넣기</div>
+ <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)"><b>✨ AI 상상 보정</b>
+ <input id="akey" type="password" placeholder="OpenAI API 키 (sk-…)" style="width:100%;box-sizing:border-box;margin-top:6px;padding:9px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg);font-size:12px">
+ <input id="aprx" placeholder="프록시 주소 (선택, 공개 서비스용)" style="width:100%;box-sizing:border-box;margin-top:6px;padding:9px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg);font-size:12px">
+ <button class="btn" id="aib" type="button" style="width:100%;margin-top:6px;flex:none">🔄 AI로 뒷모습 상상 생성</button>
+ <input id="a3d" placeholder="AI 3D 서버 주소 (사진→GLB, 선택)" style="width:100%;box-sizing:border-box;margin-top:6px;padding:9px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg);font-size:12px">
+ <button class="btn" id="a3b" type="button" style="width:100%;margin-top:6px;flex:none">🧊 AI 3D 서버로 변환</button>
+ <p style="color:var(--mut);font-size:11px;line-height:1.5;margin:6px 0 0">키는 저장되지 않고 이 브라우저에서만 쓰여요. 여러 명이 쓰는 공개 페이지는 키를 서버(프록시)에 두세요. claude.ai 링크 안에서는 외부 호출이 차단되어, 직접 호스팅한 파일에서만 동작합니다.</p></div>
+ <button class="btn" id="cp" type="button" style="width:100%;margin-top:10px;flex:none">📋 이 페이지 코드 전체 복사</button>
+ <textarea id="src" readonly style="display:none;width:100%;box-sizing:border-box;height:120px;margin-top:6px;font-size:10px;-webkit-user-select:text;user-select:text"></textarea>
+ <p style="color:var(--mut);font-size:11px;line-height:1.5;margin:10px 0 0">사진 2장 이상 선택하면 2번째가 뒷면으로 쓰여요. 복사한 코드를 .html 파일로 저장해 Netlify·GitHub Pages 등에 올리면 로그인 없이 누구나 쓸 수 있어요.</p>
+</div>
+<div id="bar">
+ <div class="btn pri">📁 사진<input id="fi" class="ov" type="file" accept="image/*" multiple></div>
+ <div class="btn">🧊 GLB<input id="fg" class="ov" type="file" accept=".glb,.gltf"></div>
+ <button class="btn" id="tg" type="button">⚙ 설정</button>
+</div>
+<script>
+(function(){
+const SRC='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
+const $=id=>document.getElementById(id),say=t=>{$('msg').textContent=t};
+onerror=m=>say('오류: '+m);
+$('tg').onclick=()=>{$('sheet').style.display=$('sheet').style.display==='block'?'none':'block'};
+$('x').onclick=()=>{$('sheet').style.display='none'};
+if(!window.THREE){say('3D 엔진을 불러오지 못했어요. 네트워크를 확인하고 새로고침하세요.');return}
+const cfg={depth:.2,round:.6,detail:0,tube:.4,ai:.6,tol:90,toon:true,base:true,wire:false},HT=2.2,FY=-1.1;
+try{Object.assign(cfg,JSON.parse(localStorage.getItem('fs_cfg')||'{}'))}catch(e){}
+let imgs=[],proc=null,fig=null,motion='idle',talk=0,zoom=1,rotY=.35,rotX=0,spin=false;
+const px={x:0,y:0},clock=new THREE.Clock(),clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(40,1,.1,100),pivot=new THREE.Group();scene.add(pivot);
+const ren=new THREE.WebGLRenderer({antialias:true,alpha:true});
+ren.setPixelRatio(Math.min(window.devicePixelRatio||1,2));ren.outputEncoding=THREE.sRGBEncoding;ren.toneMapping=THREE.ACESFilmicToneMapping;
+$('cv').appendChild(ren.domElement);
+const hemi=new THREE.HemisphereLight(0xffffff,0x8a8aa0,.9),sun=new THREE.DirectionalLight(0xffffff,1.7),rim=new THREE.DirectionalLight(0x9fb4ff,.7);
+sun.position.set(3,5,5);rim.position.set(-4,3,-4);scene.add(hemi,sun,rim);
+const baseMesh=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.3,.14,48),new THREE.MeshStandardMaterial({color:0x2a2d3e,roughness:.4,metalness:.3}));
+baseMesh.position.y=FY-.07;pivot.add(baseMesh);
+function place(){const w=innerWidth,h=innerHeight;ren.setSize(w,h);cam.aspect=w/h;cam.updateProjectionMatrix();
+ const t=Math.tan(20*Math.PI/180);cam.position.set(0,.1,Math.max(1.7/t,1.5/(t*cam.aspect))/zoom);cam.lookAt(0,0,0)}
+addEventListener('resize',place);place();
+/* 터치/마우스 회전 + 핀치 줌 */
+const cv=ren.domElement,ptr=new Map();
+cv.addEventListener('pointerdown',e=>{ptr.set(e.pointerId,e)});
+cv.addEventListener('pointermove',e=>{const o=ptr.get(e.pointerId);if(!o)return;
+ if(ptr.size===1){rotY+=(e.clientX-o.clientX)*.01;rotX=clamp(rotX+(e.clientY-o.clientY)*.006,-.6,.6)}
+ else if(ptr.size===2){let p2;ptr.forEach((v,k)=>{if(k!==e.pointerId)p2=v});
+  const d0=Math.hypot(o.clientX-p2.clientX,o.clientY-p2.clientY),d1=Math.hypot(e.clientX-p2.clientX,e.clientY-p2.clientY);
+  if(d0>0){zoom=clamp(zoom*d1/d0,.5,3);place()}}
+ ptr.set(e.pointerId,e)});
+['pointerup','pointercancel','pointerleave'].forEach(n=>cv.addEventListener(n,e=>ptr.delete(e.pointerId)));
+cv.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*(e.deltaY<0?1.08:.92),.5,3);place()},{passive:false});
+addEventListener('pointermove',e=>{px.x=e.clientX/innerWidth*2-1;px.y=e.clientY/innerHeight*2-1});
 
+/* 1) 배경 제거 + 실루엣 + 거리장 + 명암 */
+function analyze(img,tol){
+ const S=320/Math.max(img.width,img.height),W=Math.max(8,Math.round(img.width*S)),H=Math.max(8,Math.round(img.height*S));
+ const c=document.createElement('canvas');c.width=W;c.height=H;
+ const x=c.getContext('2d');x.drawImage(img,0,0,W,H);
+ const id=x.getImageData(0,0,W,H),d=id.data,N=W*H,m=new Uint8Array(N);let alpha=false;
+ for(let i=0;i<N;i++)if(d[i*4+3]<250){alpha=true;break}
+ if(alpha){for(let i=0;i<N;i++)m[i]=d[i*4+3]>40?1:0}
+ else{let r=0,g=0,b=0,n=0;const bp=i=>{r+=d[i*4];g+=d[i*4+1];b+=d[i*4+2];n++};
+  for(let i=0;i<W;i++){bp(i);bp((H-1)*W+i)}for(let j=0;j<H;j++){bp(j*W);bp(j*W+W-1)}
+  r/=n;g/=n;b/=n;const sim=i=>Math.hypot(d[i*4]-r,d[i*4+1]-g,d[i*4+2]-b)<tol;
+  const vis=new Uint8Array(N),st=[],push=i=>{if(!vis[i]&&sim(i)){vis[i]=1;st.push(i)}};
+  for(let i=0;i<W;i++){push(i);push((H-1)*W+i)}for(let j=0;j<H;j++){push(j*W);push(j*W+W-1)}
+  while(st.length){const i=st.pop(),cx=i%W,cy=(i/W)|0;if(cx>0)push(i-1);if(cx<W-1)push(i+1);if(cy>0)push(i-W);if(cy<H-1)push(i+W)}
+  for(let i=0;i<N;i++)m[i]=vis[i]?0:1}
+ const lab=new Int32Array(N);let best=0,bestN=0,L=0;
+ for(let s=0;s<N;s++){if(!m[s]||lab[s])continue;L++;let cnt=0;const q=[s];lab[s]=L;
+  while(q.length){const i=q.pop();cnt++;const cx=i%W;
+   if(cx>0&&m[i-1]&&!lab[i-1]){lab[i-1]=L;q.push(i-1)}if(cx<W-1&&m[i+1]&&!lab[i+1]){lab[i+1]=L;q.push(i+1)}
+   if(i>=W&&m[i-W]&&!lab[i-W]){lab[i-W]=L;q.push(i-W)}if(i<N-W&&m[i+W]&&!lab[i+W]){lab[i+W]=L;q.push(i+W)}}
+  if(cnt>bestN){bestN=cnt;best=L}}
+ for(let i=0;i<N;i++)m[i]=lab[i]===best?1:0;
+ const D=new Float32Array(N);for(let i=0;i<N;i++)D[i]=m[i]?1e4:0;
+ for(let j=0;j<H;j++)for(let i=0;i<W;i++){const k=j*W+i;if(!D[k])continue;let v=D[k];
+  if(i>0)v=Math.min(v,D[k-1]+1);if(j>0){v=Math.min(v,D[k-W]+1);if(i>0)v=Math.min(v,D[k-W-1]+1.41);if(i<W-1)v=Math.min(v,D[k-W+1]+1.41)}D[k]=v}
+ for(let j=H-1;j>=0;j--)for(let i=W-1;i>=0;i--){const k=j*W+i;if(!D[k])continue;let v=D[k];
+  if(i<W-1)v=Math.min(v,D[k+1]+1);if(j<H-1){v=Math.min(v,D[k+W]+1);if(i<W-1)v=Math.min(v,D[k+W+1]+1.41);if(i>0)v=Math.min(v,D[k+W-1]+1.41)}D[k]=v}
+ let maxD=0,x0=W,x1=0,y0=H,y1=0;
+ for(let j=0;j<H;j++)for(let i=0;i<W;i++){const k=j*W+i;if(m[k]&&D[k]<1.5){m[k]=0;D[k]=0;continue}
+  if(!m[k])continue;if(D[k]>maxD)maxD=D[k];if(i<x0)x0=i;if(i>x1)x1=i;if(j<y0)y0=j;if(j>y1)y1=j}
+ let Lm=new Float32Array(N),T=new Float32Array(N);for(let i=0;i<N;i++)Lm[i]=(d[i*4]*.3+d[i*4+1]*.59+d[i*4+2]*.11)/255;
+ for(let p=0;p<3;p++){for(let j=1;j<H-1;j++)for(let i=1;i<W-1;i++){const k=j*W+i;T[k]=(Lm[k]*4+Lm[k-1]+Lm[k+1]+Lm[k-W]+Lm[k+W])/8}Lm.set(T)}
+ let sm=0,sc=0;for(let i=0;i<N;i++)if(m[i]){sm+=Lm[i];sc++}
+ {const vis=new Uint8Array(N);let q=[];for(let i=0;i<N;i++)if(m[i]){vis[i]=1;q.push(i)}
+  for(let st=0;st<24&&q.length;st++){const nq=[];for(const i of q){const cx=i%W;for(const k of [cx>0?i-1:-1,cx<W-1?i+1:-1,i-W,i+W]){if(k<0||k>=N||vis[k])continue;vis[k]=1;d[k*4]=d[i*4];d[k*4+1]=d[i*4+1];d[k*4+2]=d[i*4+2];nq.push(k)}}q=nq}}
+ for(let i=0;i<N;i++)d[i*4+3]=255;x.putImageData(id,0,0);
+ return{W,H,m,D,L:Lm,mean:sm/Math.max(sc,1),maxD,x0,x1,y0,y1,canvas:c,ok:maxD>1}}
+
+/* 2) 실루엣 → 앞/뒤 부풀린 메쉬 */
+function backCanvas(p){const c=document.createElement('canvas');c.width=p.W;c.height=p.H;const x=c.getContext('2d');
+ x.drawImage(p.canvas,0,0);const b=imgs[1];
+ if(b){if(!b._q||b._t!==cfg.tol){b._q=analyze(b,cfg.tol);b._t=cfg.tol}const q=b._q;
+  if(q.ok)x.drawImage(q.canvas,q.x0,q.y0,q.x1-q.x0+1,q.y1-q.y0+1,p.x0,p.y0,p.x1-p.x0+1,p.y1-p.y0+1)}
+ return c}
+function clearFig(){if(fig){pivot.remove(fig);fig.traverse(o=>{if(o.geometry)o.geometry.dispose()})}fig=null}
+function build(){
+ if(!proc||!proc.ok)return false;clearFig();
+ const{W,H,m,D,maxD,x0,x1,y0,y1}=proc,s=HT/(y1-y0+1),rim=Math.max(2,maxD*cfg.round),hg=new Float32Array(W*H);
+ for(let k=0;k<W*H;k++)if(m[k]){const t=Math.min(Math.max(D[k]-1.5,0)/rim,1);
+  hg[k]=Math.max(0,cfg.depth*Math.sqrt(1-(1-t)*(1-t))*(1+cfg.detail*1.2*(proc.L[k]-proc.mean)))}
+ if(cfg.tube>0){const tb=new Float32Array(W*H); /* 부위별 원통: 행마다 연속된 너비로 단면을 원으로 → 머리는 두꺼우게, 팔다리는 얇게 */
+  for(let j=0;j<H;j++){let i=0;while(i<W){if(!m[j*W+i]){i++;continue}const a=i;while(i<W&&m[j*W+i])i++;const hw=(i-a)/2,c=(a+i-1)/2;
+   for(let q=a;q<i;q++){const u=(q-c)/Math.max(hw,.5);tb[j*W+q]=Math.sqrt(Math.max(0,1-u*u))*hw*s}}}
+  for(let it=0;it<3;it++){const T=new Float32Array(tb);for(let j=2;j<H-2;j++)for(let i=0;i<W;i++){const k=j*W+i;if(m[k])T[k]=(tb[k-2*W]+tb[k-W]+tb[k]+tb[k+W]+tb[k+2*W])/5}tb.set(T)}
+  for(let k=0;k<W*H;k++)if(m[k])hg[k]+=cfg.tube*tb[k]*Math.min(1,Math.max(0,(D[k]-1.5)/2))}
+ const gz=cfg.ai>0?gridDepth(proc):null; /* AI 깊이맵 → 얼굴·옷의 실제 요철 */
+ if(gz)for(let k=0;k<W*H;k++)if(m[k])hg[k]=Math.max(0,hg[k]+cfg.ai*.5*(gz[k]-.45)*Math.min(1,Math.max(0,(D[k]-1.5)/2)));
+ for(let it=0;it<2;it++)for(let j=1;j<H-1;j++)for(let i=1;i<W-1;i++){const k=j*W+i;if(m[k]&&D[k]>2)hg[k]=(hg[k]*4+hg[k-1]+hg[k+1]+hg[k-W]+hg[k+W])/8}
+ const idx=new Int32Array(W*H).fill(-1);let n=0;const P=[],U=[],UB=[];
+ for(let j=0;j<H;j++)for(let i=0;i<W;i++){const k=j*W+i;if(!m[k])continue;idx[k]=n++;
+  P.push((i-(x0+x1)/2)*s,(y1-j)*s,hg[k]);U.push(i/W,1-j/H);UB.push(1-i/W,1-j/H)}
+ const F=[],B=[];
+ for(let j=0;j<H-1;j++)for(let i=0;i<W-1;i++){const k=j*W+i,a=idx[k],b=idx[k+1],c=idx[k+W],e=idx[k+W+1];
+  if(a<0||b<0||c<0||e<0)continue;F.push(a,c,b,b,c,e);B.push(a,b,c,b,e,c)}
+ const mk=(ix,uv,flip)=>{const g=new THREE.BufferGeometry(),p=new Float32Array(P);if(flip)for(let i=2;i<p.length;i+=3)p[i]=-p[i];
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(ix);g.computeVertexNormals();return g};
+ const t1=new THREE.CanvasTexture(proc.canvas),t2=new THREE.CanvasTexture(backCanvas(proc));t1.encoding=t2.encoding=THREE.sRGBEncoding;
+ const M=cfg.toon?THREE.MeshToonMaterial:THREE.MeshStandardMaterial;
+ const m1=new M({map:t1,wireframe:cfg.wire}),m2=new M({map:t2,wireframe:cfg.wire,color:imgs[1]?0xffffff:0xc4c4c4});
+ fig=new THREE.Group();fig.add(new THREE.Mesh(mk(F,U,false),m1),new THREE.Mesh(mk(B,UB,true),m2));
+ fig.position.y=FY;pivot.add(fig);baseMesh.visible=cfg.base;return true}
+
+/* 입력 */
+function readImg(f){return new Promise(r=>{const fr=new FileReader();fr.onerror=()=>r(null);
+ fr.onload=()=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src=fr.result};fr.readAsDataURL(f)})}
+function busy(v){$('ld').style.display=v?'flex':'none'}
+async function handleImages(files){
+ busy(true);say('사진 읽는 중…');
+ try{imgs=(await Promise.all(files.map(readImg))).filter(Boolean);
+  if(!imgs.length){say('사진을 읽지 못했어요 (JPG/PNG/WEBP 권장)');busy(false);return}
+  $('pv').src=imgs[0].src;$('pv').style.display='block';say('3D 변환 중…');
+  setTimeout(()=>{try{proc=analyze(imgs[0],cfg.tol);let note='';
+   if(!proc.ok){proc=analyze(imgs[0],0);note=' (배경 제거 실패 → 원본 사용)'}
+   say(build()?'완료 · '+imgs.length+'장'+note+' · 두께/디테일은 ⚙ 설정':'변환 실패');
+   $('sheet').style.display='none';if($('auto').checked)setTimeout(runDepth,200)}catch(e){say('처리 오류: '+e.message)}busy(false)},30)
+ }catch(e){say('오류: '+e.message);busy(false)}}
+function handleGLB(f){
+ if(!THREE.GLTFLoader){say('GLB 로더를 불러오지 못했어요');return}
+ busy(true);const fr=new FileReader();fr.onerror=()=>{busy(false);say('GLB 읽기 실패')};
+ fr.onload=()=>{try{new THREE.GLTFLoader().parse(fr.result,'',g=>{clearFig();fig=new THREE.Group();const o=g.scene;fig.add(o);
+  const b=new THREE.Box3().setFromObject(o),sz=b.getSize(new THREE.Vector3());o.scale.setScalar(HT/(sz.y||1));
+  const b2=new THREE.Box3().setFromObject(o),c=b2.getCenter(new THREE.Vector3());o.position.set(-c.x,-b2.min.y,-c.z);
+  fig.position.y=FY;pivot.add(fig);busy(false);say('GLB 로드 완료')},e=>{busy(false);say('GLB 오류')})}catch(e){busy(false);say('GLB 오류: '+e.message)}};
+ fr.readAsArrayBuffer(f)}
+function dispatch(list){list=[...list];const g=list.find(f=>/\.(glb|gltf)$/i.test(f.name));
+ if(g)return handleGLB(g);const im=list.filter(f=>/^image\//.test(f.type)||/\.(jpe?g|png|webp|gif|bmp)$/i.test(f.name));
+ if(im.length)handleImages(im);else say('지원하지 않는 파일이에요')}
+$('fi').onchange=e=>{const l=[...e.target.files];e.target.value='';if(l.length)dispatch(l)};
+$('fg').onchange=e=>{const l=[...e.target.files];e.target.value='';if(l.length)dispatch(l)};
+addEventListener('paste',e=>{const f=e.clipboardData&&e.clipboardData.files;if(f&&f.length){e.preventDefault();dispatch(f)}});
+$('pb').addEventListener('paste',()=>{setTimeout(()=>{const im=$('pb').querySelector('img');if(im&&/^data:image/.test(im.src)){try{const p=im.src.split(','),bin=atob(p[1]),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);dispatch([new File([u],'paste.png',{type:'image/png'})])}catch(e){say('붙여넣기 실패')}}$('pb').innerHTML='📎 사진을 복사한 뒤 여기를 길게 눌러 붙여넣기'},60)});
+$('cp').onclick=async()=>{try{await navigator.clipboard.writeText(SRC);say('코드 복사 완료 ('+Math.round(SRC.length/1024)+'KB)')}catch(e){const t=$('src');t.value=SRC;t.style.display='block';t.focus();t.select();let ok=false;try{ok=document.execCommand('copy')}catch(_){}say(ok?'코드 복사 완료':'아래 칸을 길게 눌러 전체 선택 후 복사하세요')}};
+addEventListener('dragover',e=>e.preventDefault());addEventListener('drop',e=>{e.preventDefault();if(e.dataTransfer.files.length)dispatch(e.dataTransfer.files)});
+
+/* UI */
+let tm;const later=fn=>{clearTimeout(tm);tm=setTimeout(fn,70)};
+const bind=(id,k)=>{$(id).oninput=e=>{cfg[k]=+e.target.value;later(()=>{if(k==='tol'&&imgs[0])proc=analyze(imgs[0],cfg.tol);build()})}};
+bind('depth','depth');bind('round','round');bind('detail','detail');bind('tube','tube');bind('ai','ai');bind('tol','tol');
+$('light').oninput=e=>{sun.intensity=+e.target.value};
+$('toon').onchange=e=>{cfg.toon=e.target.checked;build()};$('wire').onchange=e=>{cfg.wire=e.target.checked;build()};
+$('base').onchange=e=>{cfg.base=baseMesh.visible=e.target.checked};$('spin').onchange=e=>{spin=e.target.checked};
+$('mo').onclick=e=>{const b=e.target.closest('button');if(!b)return;motion=b.dataset.m;[...$('mo').children].forEach(x=>x.classList.toggle('on',x===b))};
+function toBlob(img,max){const s=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);
+ const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,'image/png'))}
+$('aib').onclick=async()=>{if(!imgs[0]){say('먼저 사진을 올리세요');return}
+ const prx=$('aprx').value.trim(),key=$('akey').value.trim();if(!prx&&!key){say('OpenAI 키 또는 프록시 주소가 필요해요');return}
+ busy(true);say('AI가 뒷모습을 상상하는 중… (최대 1분)');
+ try{const fd=new FormData(),port=imgs[0].height>=imgs[0].width;fd.append('model','gpt-image-1');fd.append('image',await toBlob(imgs[0],1024),'front.png');
+  fd.append('prompt','The same character with identical art style, hair, outfit, colors and proportions, seen exactly from directly behind (back view), full body standing pose, same framing, plain solid background.');
+  fd.append('size',port?'1024x1536':'1536x1024');
+  const r=await fetch(prx||'https://api.openai.com/v1/images/edits',{method:'POST',headers:key?{Authorization:'Bearer '+key}:{},body:fd});
+  if(!r.ok)throw new Error((await r.text()).slice(0,160));const j=await r.json(),b64=j.data&&j.data[0]&&j.data[0].b64_json;if(!b64)throw new Error('응답에 이미지가 없어요');
+  const im=await new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src='data:image/png;base64,'+b64});
+  imgs[1]=im;build();say('AI 뒷모습 적용 완료 — 화면을 돌려 확인해보세요')}
+ catch(e){say('AI 오류: '+e.message)}busy(false)};
+$('a3b').onclick=async()=>{const u=$('a3d').value.trim();if(!u||!imgs[0]){say('사진과 서버 주소가 필요해요');return}
+ busy(true);say('AI 3D 변환 중…');
+ try{const fd=new FormData();fd.append('image',await toBlob(imgs[0],1024),'in.png');const r=await fetch(u,{method:'POST',body:fd});if(!r.ok)throw new Error('HTTP '+r.status);
+  handleGLB(new File([await r.blob()],'ai.glb'))}catch(e){say('3D 서버 오류: '+e.message);busy(false)}};
+function gridDepth(p){if(p._dz)return p._dz;const dd=imgs[0]&&imgs[0]._depth;if(!dd)return null;
+ const{W,H,m}=p,z=new Float32Array(W*H),c=dd.c,vals=[];
+ for(let j=0;j<H;j++)for(let i=0;i<W;i++){const k=j*W+i;if(!m[k])continue;
+  const u=Math.min(dd.w-1,Math.floor((i+.5)/W*dd.w)),v=Math.min(dd.h-1,Math.floor((j+.5)/H*dd.h));z[k]=dd.data[(v*dd.w+u)*c];vals.push(z[k])}
+ vals.sort((a,b)=>a-b);const lo=vals[Math.floor(vals.length*.05)],hi=vals[Math.floor(vals.length*.95)],r=(hi-lo)||1;
+ for(let k=0;k<W*H;k++)if(m[k])z[k]=clamp((z[k]-lo)/r,0,1);
+ for(let it=0;it<2;it++){const T=new Float32Array(z);for(let j=1;j<H-1;j++)for(let i=1;i<W-1;i++){const k=j*W+i;if(m[k])T[k]=(z[k]*4+z[k-1]+z[k+1]+z[k-W]+z[k+W])/8}z.set(T)}
+ p._dz=z;return z}
+let depthPipe=null;
+async function runDepth(){if(!imgs[0]){say('먼저 사진을 올리세요');return}
+ busy(true);
+ try{if(!depthPipe){say('AI 깊이 모델 불러오는 중… (처음 한 번, 약 30MB)');
+   const T=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');T.env.allowLocalModels=false;
+   depthPipe=await T.pipeline('depth-estimation','Xenova/depth-anything-small-hf',{progress_callback:q=>{if(q.status==='progress')say('모델 내려받는 중 '+Math.round(q.progress)+'%')}})}
+  say('AI가 깊이를 계산하는 중…');
+  const out=await depthPipe(imgs[0].src),d=out.depth;imgs[0]._depth={w:d.width,h:d.height,c:d.channels||1,data:d.data};
+  if(proc)proc._dz=null;build();$('ais').textContent='🟢 AI 깊이 연결됨 (무료 · 내 기기에서 실행)';say('AI 깊이 적용 완료 · “AI 깊이 강도”로 조절')}
+ catch(e){$('ais').textContent='🔴 이 주소에서는 외부 AI가 막혀 있어요 → 직접 호스팅한 파일에서 자동 연결됩니다';say('AI 깊이 실패: '+e.message)}busy(false)}
+$('dbt').onclick=runDepth;
+try{const ui=JSON.parse(localStorage.getItem('fs_ui')||'{}');if(ui.aprx)$('aprx').value=ui.aprx;if(ui.a3d)$('a3d').value=ui.a3d;if('auto' in ui)$('auto').checked=ui.auto;
+ for(const id of ['depth','round','detail','tube','ai','tol'])$(id).value=cfg[id];$('toon').checked=cfg.toon;$('base').checked=cfg.base;$('wire').checked=cfg.wire;baseMesh.visible=cfg.base}catch(e){}
+const persist=()=>{try{localStorage.setItem('fs_cfg',JSON.stringify(cfg));localStorage.setItem('fs_ui',JSON.stringify({aprx:$('aprx').value,a3d:$('a3d').value,auto:$('auto').checked}))}catch(e){}};
+$('sheet').addEventListener('input',persist);$('sheet').addEventListener('change',persist);
+window.figure={setMotion:m=>{motion=m},talk:v=>{talk=v}};   // 대화 AI 연동용
+
+/* 라이브 모션 */
+ren.setAnimationLoop(()=>{const t=clock.getElapsedTime(),L=(a,b)=>a+(b-a)*.12;
+ if(spin&&!ptr.size)rotY+=.012;pivot.rotation.y=L(pivot.rotation.y,rotY);pivot.rotation.x=L(pivot.rotation.x,rotX);
+ if(fig){let ry=0,rx=0,rz=0,sy=1,py=0;
+  if(motion==='idle'){sy=1+Math.sin(t*2)*.012;rz=Math.sin(t*.8)*.012}
+  else if(motion==='look'){ry=px.x*.6;rx=px.y*.2;sy=1+Math.sin(t*2)*.008}
+  else if(motion==='sway'){rz=Math.sin(t*2.5)*.07;py=Math.abs(Math.sin(t*2.5))*.05}
+  else if(motion==='talk'){const v=Math.max(talk,.5+.5*Math.sin(t*14)*Math.sin(t*3.1));sy=1+v*.02;rx=Math.sin(t*5)*.04*v;ry=px.x*.3}
+  fig.rotation.y=L(fig.rotation.y,ry);fig.rotation.x=L(fig.rotation.x,rx);fig.rotation.z=L(fig.rotation.z,rz);fig.scale.y=L(fig.scale.y,sy);fig.position.y=L(fig.position.y,FY+py)}
+ ren.render(scene,cam)});
+
+/* 데모 캐릭터 */
+try{const c=document.createElement('canvas');c.width=240;c.height=320;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,240,320);
+ const rr=(a,b,w,h,col)=>{x.fillStyle=col;x.beginPath();if(x.roundRect)x.roundRect(a,b,w,h,16);else x.rect(a,b,w,h);x.fill()};
+ const el=(a,b,w,h,col)=>{x.fillStyle=col;x.beginPath();x.ellipse(a,b,w,h,0,0,7);x.fill()};
+ rr(80,170,80,110,'#5b6cff');rr(52,185,30,75,'#ffd9b8');rr(158,185,30,75,'#ffd9b8');rr(85,270,30,40,'#2b2f4a');rr(125,270,30,40,'#2b2f4a');
+ el(120,100,78,74,'#ff9ec4');el(120,108,66,62,'#ffe3cf');el(96,112,8,12,'#222');el(144,112,8,12,'#222');el(80,130,9,5,'#ff9aa8');el(160,130,9,5,'#ff9aa8');
+ x.strokeStyle='#a33';x.lineWidth=3;x.beginPath();x.arc(120,132,8,.2,Math.PI-.2);x.stroke();
+ const i=new Image();i.onload=()=>{imgs=[i];proc=analyze(i,40);build();say('데모 캐릭터 · 📁 사진 버튼으로 내 사진을 올려보세요')};i.src=c.toDataURL()}catch(e){say('데모 생성 실패: '+e.message)}
+})();
+</script>
+</body>
+</html>
